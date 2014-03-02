@@ -20,9 +20,6 @@
   "engines": {
     "node": ">= 0.8.0"
   },
-  "scripts": {
-    "test": "mocha test/ut --recursive"
-  },
   "dependencies": {
     "ftp": "0.3.6"
   },
@@ -30,7 +27,5 @@
   "readmeFilename": "README.md",
   "bugs": {
     "url": "https://github.com/qdsang/fis-deploy-ftp.git"
-  },
-  "_id": "fis-deploy-ftp@0.0.1",
-  "_from": "fis-deploy-ftp@"
+  }
 }
