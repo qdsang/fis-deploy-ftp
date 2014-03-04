@@ -22,12 +22,28 @@ module.exports = function(ret, conf, settings, opt){
 
     // 区分页面与资源文件
     fis.util.map(ret.src, function(subpath, file, index){
-        if (file.isHtmlLike) {
-            queue.splice(0, 0, file);
-        }else {
-            queue.push(file);
+        var item = {filepath: file.cache.cacheFile}, remotepath, hash;
+
+        hash = fis.util.md5(file._content, 7);
+        if(file.useHash && opt.md5 > 0){
+            remotepath = file.getHashRelease(file.release);
+        }else{
+            remotepath = file.release;
         }
-        console.log(file.release);
+
+        item['remotepath'] = remotepath;
+        item['hash'] = hash;
+
+        if (remoteFileCache[remotepath] && remoteFileCache[remotepath].hash == hash) {
+            return ;
+        }
+
+        if (file.isHtmlLike) {
+            queue.splice(0, 0, item);
+        }else {
+            queue.push(item);
+        }
+
     });
 
     if (!ftpQueue) {
@@ -36,10 +52,10 @@ module.exports = function(ret, conf, settings, opt){
 
     var filter = settings.filter;
 
-
-
-    function uploadFile(filepath, remotepath, done) {
-        var remotedir = path.dirname(remotepath);
+    function uploadFile(file, done) {
+        var filepath = file.filepath,
+            remotepath = file.remotepath,
+            remotedir = path.dirname(remotepath);
 
         if (remoteDirCache[remotedir]) {
             _uploadFile();
@@ -56,38 +72,52 @@ module.exports = function(ret, conf, settings, opt){
             });
         }
         function _uploadFile(){
-            ftpQueue.addFile(filepath, remotepath, function(err, val){
-                console.log('upload file: ' + remotepath);
-            });
+            var pathsfiles = remoteDirCache[remotedir] || [],
+                filename = path.basename(remotepath),
+                isExist = false;
+            for (var i = 0; i < pathsfiles.length; i++ ) {
+                if (pathsfiles[i].name == filename) {
+                    isExist = true;
+                    break;
+                }
+                //console.log(filename + ' ' + pathsfiles[i].name);
+            }
+            if (isExist) {
+                console.log('skip :' + remotepath);
+            }else {
+                console.log('Ready :' + remotepath);
+                ftpQueue.addFile(filepath, remotepath, function(err, val){
+                    console.log('upload file: ' + remotepath);
+                    remoteFileCache[remotepath] = file;
+                });
+            }
             done && done();
         }
     }
 
     function execute(){
-        var file = queue.pop(), hash, release;
+        var file = queue.pop();
         if (!file) {
             ftpQueue.end();
             return ;
         }
 
-        hash = fis.util.md5(file._content, 7);
-        if(file.useHash && opt.md5 > 0){
-            release = file.getHashRelease(file.release);
-        }else{
-            release = file.release;
-        }
-        if (remoteFileCache[release] && remoteFileCache[release].hash == hash) {
-            return ;
-        }
-
-        uploadFile(file.cache.cacheFile, release, function(){
-            file.hash = hash;
-            remoteFileCache[release] = file;
+        uploadFile(file, function(){
             execute();
         });
     }
 
-    execute();
+    var remotedir = '/';
+    ftpQueue.listFiles(remotedir, function(err, list){
+        if (!list || list.length == 0) {
+
+        }else {
+            remoteDirCache[remotedir] = list;
+            execute();
+        }
+    });
+
+    //execute();
 
 };
 
@@ -98,9 +128,13 @@ module.exports.defaultOptions = {
     connect : {
         host : '127.0.0.1',
         port : '21',
-        secure : true,
+        secure : false,
         user : 'name',
-        password : '****'
+        password : '****',
+        secureOptions : undefined,
+        connTimeout : 5000,
+        pasvTimeout : 10000,
+        keepalive : 10000
     }
 };
 
@@ -114,6 +148,14 @@ function createFtpQueue(opts) {
     function initClient(cb) {
         client = new ftp();
         client.on('ready', cb);
+        client.on('error', function (err, info){
+            var message = err.message;
+            if (message == 'connect ETIMEDOUT') {
+                return;
+            }
+            console.log('deploy ftp: error ' + message);
+            client.destroy();
+        });
         client.connect(opts.connect);
     }
     function consoleinfo(info){
