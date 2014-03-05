@@ -17,20 +17,21 @@ module.exports = function(ret, conf, settings, opt){
     //console.log(opt);
 
     var queue = [],
-        root = fis.project.getProjectPath();
+        root = fis.project.getProjectPath(),
+        mapRes = ret['map']['res'];
     settings.dir = '/';
-
+    //console.log(ret);
     // 区分页面与资源文件
     fis.util.map(ret.src, function(subpath, file, index){
-        var item = {filepath: file.cache.cacheFile}, remotepath, hash;
+
+        var item = {filepath: file._content || file.cache.cacheFile}, remotepath, hash;
 
         hash = fis.util.md5(file._content, 7);
-        if(file.useHash && opt.md5 > 0){
-            remotepath = file.getHashRelease(file.release);
-        }else{
-            remotepath = file.release;
-        }
 
+        var res = mapRes[file.id];
+        remotepath = res && res.uri || file.release || '';
+
+        //item[''] = ;
         item['remotepath'] = remotepath;
         item['hash'] = hash;
 
@@ -84,14 +85,15 @@ module.exports = function(ret, conf, settings, opt){
             }
             if (isExist) {
                 console.log('skip :' + remotepath);
+                done && done();
             }else {
                 console.log('Ready :' + remotepath);
                 ftpQueue.addFile(filepath, remotepath, function(err, val){
                     console.log('upload file: ' + remotepath);
                     remoteFileCache[remotepath] = file;
+                    done && done();
                 });
             }
-            done && done();
         }
     }
 
@@ -106,6 +108,7 @@ module.exports = function(ret, conf, settings, opt){
             execute();
         });
     }
+
 
     var remotedir = '/';
     ftpQueue.listFiles(remotedir, function(err, list){
@@ -170,7 +173,7 @@ function createFtpQueue(opts) {
 
     function doSend(filename, remoteName) {
         if (!client) {
-            initClient(doSend.bind(null, filename));
+            initClient(doSend.bind(null, filename, remoteName));
             return;
         }
         remoteName = getRemoteName(remoteName) || getRemoteName(filename);
