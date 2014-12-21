@@ -12,7 +12,7 @@ var resolveing = {};
 module.exports = function(dest, file, content, settings, callback) {
 
     settings.remoteDir = settings.remoteDir || dest.to || '/';
-    settings.console = true;
+    // settings.console = true;
     var ftpQueue = createFtpQueue(settings);
 
     dest = path.join(dest.to || '', dest.release);
