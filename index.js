@@ -83,22 +83,24 @@ module.exports = function(dest, file, content, settings, callback) {
     });
 };
 
-// module.exports.defaultOptions = {
-//     remoteDir : '/',
-//     filter : null,
-//     console : false,
-//     connect : {
-//         host : '127.0.0.1',
-//         port : '21',
-//         secure : false,
-//         user : 'name',
-//         password : '****',
-//         secureOptions : undefined,
-//         connTimeout : 5000,
-//         pasvTimeout : 10000,
-//         keepalive : 10000
-//     }
-// };
+module.exports.defaultOptions = {
+    publish: {
+        remoteDir : '/',
+        // filter : null,
+        console : false,
+        connect : {
+            host : '127.0.0.1',
+            port : '21',
+            secure : false,
+            user : 'name',
+            password : '****',
+            secureOptions : undefined,
+            connTimeout : 5000,
+            pasvTimeout : 10000,
+            keepalive : 10000
+        }
+    }
+};
 
 // 参考：
 // https://github.com/hitsthings/node-live-ftp-upload/blob/master/index.js
