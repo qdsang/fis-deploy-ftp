@@ -6,138 +6,99 @@ var fs = require('fs');
 var path = require('path');
 
 
-var ftpQueue;
 var remoteDirCache = {};
-var remoteFileCache = {};
+var resolveing = {};
 
+module.exports = function(dest, file, content, settings, callback) {
 
-module.exports = function(ret, conf, settings, opt){
-    //console.log(conf);
-    //console.log(settings);
-    //console.log(opt);
+    settings.remoteDir = settings.remoteDir || dest.to || '/';
+    // settings.console = true;
+    var ftpQueue = createFtpQueue(settings);
 
-    var queue = [],
-        root = fis.project.getProjectPath(),
-        mapRes = ret['map']['res'];
-    settings.dir = '/';
-    //console.log(ret);
-    // 区分页面与资源文件
-    fis.util.map(ret.src, function(subpath, file, index){
-
-        var item = {filepath: file._content || file.cache.cacheFile}, remotepath, hash;
-
-        hash = fis.util.md5(file._content, 7);
-
-        var res = mapRes[file.id];
-        remotepath = res && res.uri || file.release || '';
-
-        //item[''] = ;
-        item['remotepath'] = remotepath;
-        item['hash'] = hash;
-
-        if (remoteFileCache[remotepath] && remoteFileCache[remotepath].hash == hash) {
-            return ;
+    dest = path.join(dest.to || '', dest.release);
+    var dirname = path.dirname(dest);
+    var resolveDir = function(dirname, cb) {
+        if (remoteDirCache[dirname]) {
+            cb(false, remoteDirCache[dirname]);
+            return;
         }
 
-        if (file.isHtmlLike) {
-            queue.splice(0, 0, item);
-        }else {
-            queue.push(item);
-        }
+        var listRemote = function() {
+            var queues = resolveing[dirname] || (resolveing[dirname] = []);
+            if (queues.length) {
+                queues.push(cb);
+            } else {
+                queues.push(cb);
 
-    });
+                ftpQueue.listFiles(dirname, function(err, list){
+                    if (err) {
+                        throw new Error(err);
+                    }
 
-    if (!ftpQueue) {
-        ftpQueue = createFtpQueue(settings);
-    }
+                    var fn = function() {
+                        remoteDirCache[dirname] = true;
+                        delete resolveing[dirname];
+                        queues.forEach(function(cb) {
+                            cb(list);
+                        });
+                    };
 
-    var filter = settings.filter;
-
-    function uploadFile(file, done) {
-        var filepath = file.filepath,
-            remotepath = file.remotepath,
-            remotedir = path.dirname(remotepath);
-
-        if (remoteDirCache[remotedir]) {
-            _uploadFile();
-        }else {
-            ftpQueue.listFiles(remotedir, function(err, list){
-                if (!list || list.length == 0) {
-                    ftpQueue.addDir(remotedir, function(){
-                        _uploadFile();
-                    });
-                }else {
-                    remoteDirCache[remotedir] = list;
-                    _uploadFile();
-                }
-            });
-        }
-        function _uploadFile(){
-            var pathsfiles = remoteDirCache[remotedir] || [],
-                filename = path.basename(remotepath),
-                isExist = false;
-            for (var i = 0; i < pathsfiles.length; i++ ) {
-                if (pathsfiles[i].name == filename) {
-                    isExist = true;
-                    break;
-                }
-                //console.log(filename + ' ' + pathsfiles[i].name);
-            }
-            if (isExist) {
-                console.log('skip :' + remotepath);
-                done && done();
-            }else {
-                console.log('Ready :' + remotepath);
-                ftpQueue.addFile(filepath, remotepath, function(err, val){
-                    console.log('upload file: ' + remotepath);
-                    remoteFileCache[remotepath] = file;
-                    done && done();
+                    if (!list || list.length == 0) {
+                        ftpQueue.addDir(dirname, fn);
+                    } else {
+                        fn();
+                    }
                 });
             }
         }
-    }
 
-    function execute(){
-        var file = queue.pop();
-        if (!file) {
+        if (~dirname.indexOf(path.sep) && path.dirname(dirname) !== dirname) {
+            resolveDir(path.dirname(dirname), listRemote);
+        } else {
+            listRemote();
+        }
+    };
+
+    resolveDir(dirname, function() {
+        ftpQueue.addFile(file.subpath, dest, new Buffer(content), function(err, val) {
+
+            if (err) {
+                throw new Error(err);
+            }
+
+            var time = '[' + fis.log.now(true) + ']';
+
+            process.stdout.write(
+                ' - '.green.bold +
+                time.grey + ' ' +
+                file.subpath +
+                ' >> '.yellow.bold +
+                dest +
+                '\n'
+            );
+
             ftpQueue.end();
-            return ;
-        }
-
-        uploadFile(file, function(){
-            execute();
+            callback && callback();
         });
-    }
-
-
-    var remotedir = '/';
-    ftpQueue.listFiles(remotedir, function(err, list){
-        if (!list || list.length == 0) {
-
-        }else {
-            remoteDirCache[remotedir] = list;
-            execute();
-        }
     });
-
-    //execute();
-
 };
 
 module.exports.defaultOptions = {
-    remoteDir : '/',
-    filter : null,
-    console : false,
-    connect : {
-        host : '127.0.0.1',
-        port : '21',
-        secure : false,
-        user : 'name',
-        password : '****',
-        secureOptions : undefined,
-        connTimeout : 5000,
-        pasvTimeout : 10000,
-        keepalive : 10000
+    publish: {
+        remoteDir : '/',
+        // filter : null,
+        console : false,
+        connect : {
+            host : '127.0.0.1',
+            port : '21',
+            secure : false,
+            user : 'name',
+            password : '****',
+            secureOptions : undefined,
+            connTimeout : 5000,
+            pasvTimeout : 10000,
+            keepalive : 10000
+        }
     }
 };
 
@@ -147,6 +108,8 @@ function createFtpQueue(opts) {
 
     var client;
     var queue = [];
+
+    opts.remoteDir = opts.remoteDir.replace(/^\/+/, '');
 
     function initClient(cb) {
         client = new ftp();
@@ -168,17 +131,17 @@ function createFtpQueue(opts) {
     }
 
     function getRemoteName(filename) {
-        return path.join(opts.remoteDir, path.relative(opts.dir, filename)).replace(/\\/g, '/'); 
+        return path.join(opts.remoteDir, filename).replace(/\\/g, '/');
     }
 
-    function doSend(filename, remoteName) {
+    function doSend(filename, remoteName, fileSource) {
         if (!client) {
-            initClient(doSend.bind(null, filename, remoteName));
+            initClient(doSend.bind(null, filename, remoteName, fileSource));
             return;
         }
         remoteName = getRemoteName(remoteName) || getRemoteName(filename);
         consoleinfo("Uploading " + filename + " as " + remoteName + ".");
-        client.put(filename, remoteName, function(err) {
+        client.put(fileSource || filename, remoteName, function(err) {
             consoleinfo(err ? "Couldn't upload " + filename + ":\n" + err : filename + ' uploaded.');
             advanceQueue(err);
         });
@@ -241,7 +204,7 @@ function createFtpQueue(opts) {
                 advanceQueue(err, list);
             }
             if (result === true || result.length) return;
-            
+
             if (list && list.length) {
                 result = list;
             }
@@ -258,7 +221,7 @@ function createFtpQueue(opts) {
         var remoteName = entry.remoteName;
         var action = entry.action;
         switch(action) {
-            case 'upsert' : doSend(file, remoteName); break;
+            case 'upsert' : doSend(file, remoteName, entry.source); break;
             case 'delete' : doDelete(file); break;
             case 'mkdir' : doMkdir(file); break;
             case 'rmdir' : doRmdir(file); break;
@@ -296,8 +259,8 @@ function createFtpQueue(opts) {
         }
     }
 
-    function addFile(filename, remoteName, callback) {
-        addToQueue({ file : filename, remoteName: remoteName, action : 'upsert', callback : callback });
+    function addFile(filename, remoteName, source, callback) {
+        addToQueue({ file : filename, source: source, remoteName: remoteName, action : 'upsert', callback : callback });
     }
 
     function removeFile(filename, callback) {
