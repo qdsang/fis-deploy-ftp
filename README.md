@@ -5,13 +5,13 @@
 启用
 
 ```
-fis.config.set('modules.deploy', ['default', 'bcs'])
+fis.config.set('modules.deploy', ['default', 'ftp'])
 ```
 
 配置
 
 ```
-fis.config.set('settings.deploy.bcs', {
+fis.config.set('settings.deploy.ftp', {
     publish : {
         remoteDir : '/temp/',
 
